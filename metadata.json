@@ -1,0 +1,6 @@
+{
+  "name": "FitBudget - Smart Notification & Workout Alarm",
+  "description": "Progressive Web App notification, workout alarm, and reminder system for FitBudget with Web Push, customizable alarm sounds, and cross-device sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
