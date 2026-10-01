@@ -16,11 +16,13 @@ import {
   Info,
   HelpCircle,
   FolderDown,
-  Apple
+  Apple,
+  Package
 } from 'lucide-react';
 import { StorageMode, UserPreferences, ReminderItem } from '../types/notifications';
 import { notificationService } from '../services/notificationService';
 import { PhoneStorageStats } from '../services/localDatabase';
+import { AppPackageGenerator } from '../services/appPackageGenerator';
 
 interface PhoneDatabaseManagerProps {
   preferences: UserPreferences;
@@ -28,6 +30,7 @@ interface PhoneDatabaseManagerProps {
   onUpdatePreferences: (updates: Partial<UserPreferences>) => void;
   onRefreshData: () => void;
   onOpenPhoneGuide?: () => void;
+  onOpenAppInstaller?: () => void;
 }
 
 export const PhoneDatabaseManager: React.FC<PhoneDatabaseManagerProps> = ({
@@ -36,6 +39,7 @@ export const PhoneDatabaseManager: React.FC<PhoneDatabaseManagerProps> = ({
   onUpdatePreferences,
   onRefreshData,
   onOpenPhoneGuide,
+  onOpenAppInstaller,
 }) => {
   const [stats, setStats] = useState<PhoneStorageStats | null>(null);
   const [isPersisting, setIsPersisting] = useState(false);
@@ -341,6 +345,57 @@ export const PhoneDatabaseManager: React.FC<PhoneDatabaseManagerProps> = ({
           >
             <RotateCcw className="w-4 h-4" />
             <span>Reset Schedule Defaults</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Standalone Mobile App & Android Package (.apk / .exe alternative) */}
+      <div className="rounded-3xl border border-indigo-500/30 bg-indigo-950/20 p-5 md:p-6 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <Package className="w-5 h-5 text-indigo-400" />
+            <h4 className="text-sm font-bold text-white uppercase tracking-wider">
+              Download Standalone Mobile App Package (.apk &amp; Offline App)
+            </h4>
+          </div>
+
+          {onOpenAppInstaller && (
+            <button
+              onClick={onOpenAppInstaller}
+              className="flex items-center gap-1.5 rounded-xl bg-indigo-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-indigo-400 transition"
+            >
+              <span>Open Installer Guide</span>
+            </button>
+          )}
+        </div>
+
+        <p className="text-xs text-slate-300 leading-relaxed">
+          Need an actual installer file downloaded to your phone (like an <strong className="text-white">.exe</strong> or <strong className="text-emerald-400 font-mono">.apk</strong>)?
+          Smartphones run <strong className="text-emerald-400 font-mono">.apk</strong> instead of Windows <strong className="text-slate-400 font-mono">.exe</strong>.
+          You can download a standalone offline application file or the Android APK package specification directly below:
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          <button
+            onClick={() => {
+              AppPackageGenerator.downloadStandaloneOfflineApp();
+              setExportMessage('Downloaded FitBudget-Offline-App.html directly to your device!');
+            }}
+            className="flex items-center justify-center gap-2 rounded-2xl border border-purple-500/40 bg-purple-950/30 p-3.5 text-xs font-bold text-purple-300 hover:bg-purple-900/40 transition active:scale-95 text-center"
+          >
+            <Download className="w-4 h-4 text-purple-400" />
+            <span>Download Offline Single-File App (.html)</span>
+          </button>
+
+          <button
+            onClick={() => {
+              AppPackageGenerator.downloadAndroidPackageFiles();
+              setExportMessage('Downloaded FitBudget-Android-APK-Guide.md!');
+            }}
+            className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/40 bg-emerald-950/30 p-3.5 text-xs font-bold text-emerald-300 hover:bg-emerald-900/40 transition active:scale-95 text-center"
+          >
+            <Package className="w-4 h-4 text-emerald-400" />
+            <span>Download Android .APK Build Guide</span>
           </button>
         </div>
       </div>

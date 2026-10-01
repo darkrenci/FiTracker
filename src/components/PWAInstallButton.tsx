@@ -2,7 +2,10 @@ import React, { useState } from 'react';
 import { Download, Smartphone, X, Check, Apple, HardDrive, Share2, HelpCircle } from 'lucide-react';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 
-export const PWAInstallButton: React.FC<{ onOpenPhoneDatabase?: () => void }> = ({ onOpenPhoneDatabase }) => {
+export const PWAInstallButton: React.FC<{
+  onOpenPhoneDatabase?: () => void;
+  onOpenAppInstaller?: () => void;
+}> = ({ onOpenPhoneDatabase, onOpenAppInstaller }) => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [showGuide, setShowGuide] = useState(false);
   const [guidePlatform, setGuidePlatform] = useState<'android' | 'ios' | 'data'>('android');
@@ -44,11 +47,15 @@ export const PWAInstallButton: React.FC<{ onOpenPhoneDatabase?: () => void }> = 
 
         <button
           onClick={() => {
-            setGuidePlatform(isIOS ? 'ios' : 'android');
-            setShowGuide(true);
+            if (onOpenAppInstaller) {
+              onOpenAppInstaller();
+            } else {
+              setGuidePlatform(isIOS ? 'ios' : 'android');
+              setShowGuide(true);
+            }
           }}
           className="p-1.5 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:text-white transition"
-          title="Phone Download Guide"
+          title="Phone Download & .apk / .exe Installer Guide"
         >
           <HelpCircle className="w-4 h-4" />
         </button>

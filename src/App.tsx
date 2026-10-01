@@ -15,7 +15,11 @@ import {
   HelpCircle,
   Settings,
   Share2,
-  HardDrive
+  HardDrive,
+  Briefcase,
+  User,
+  Menu,
+  Sliders
 } from 'lucide-react';
 import {
   DeviceSubscription,
@@ -27,22 +31,52 @@ import {
 import { INITIAL_PREFERENCES, INITIAL_REMINDERS } from './data/defaultSchedule';
 import { notificationService } from './services/notificationService';
 import { soundEngine } from './services/soundEngine';
+import { localAuthService } from './services/localAuth';
+import { LocalUserProfile } from './types/user';
+import { WorkScheduleConfig, CompletedWorkoutRecord } from './types/workSchedule';
+import { DEFAULT_WORK_CONFIG } from './data/defaultWorkSchedule';
+import { GPXTrackPoint } from './services/stravaService';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { WorkoutAlarmModal } from './components/WorkoutAlarmModal';
 import { ActiveWorkoutTracker } from './components/ActiveWorkoutTracker';
+import { WorkoutSummaryModal } from './components/WorkoutSummaryModal';
+import { LocalAuthModal } from './components/LocalAuthModal';
+import { WorkSchedulePlanner } from './components/WorkSchedulePlanner';
 import { OnboardingPermissionModal } from './components/OnboardingPermissionModal';
 import { SoundSettingsPanel } from './components/SoundSettingsPanel';
 import { ScheduleManager } from './components/ScheduleManager';
 import { NotificationCenter } from './components/NotificationCenter';
 import { DeviceSyncManager } from './components/DeviceSyncManager';
 import { PhoneDatabaseManager } from './components/PhoneDatabaseManager';
+import { AppInstallerModal } from './components/AppInstallerModal';
 import { ReliabilityTestingSuite } from './components/ReliabilityTestingSuite';
 import { NativeAppArchitecture } from './components/NativeAppArchitecture';
+import { TodayWorkoutHub } from './components/TodayWorkoutHub';
+import { AppMenuDrawer } from './components/AppMenuDrawer';
+import { SleepRecoveryOptimizer } from './components/SleepRecoveryOptimizer';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'schedule' | 'sounds' | 'history' | 'devices' | 'phone_db' | 'reliability' | 'native'>('schedule');
+  const [activeTab, setActiveTab] = useState<'today' | 'recommendations' | 'schedule' | 'work_schedule' | 'sounds' | 'history' | 'devices' | 'phone_db' | 'reliability' | 'native'>('today');
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   
+  // Local Database User Auth State
+  const [currentUser, setCurrentUser] = useState<LocalUserProfile | null>(localAuthService.getCurrentUser());
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [workConfig, setWorkConfig] = useState<WorkScheduleConfig>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('fitbudget_work_config');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          // fallback
+        }
+      }
+    }
+    return currentUser?.workSchedule || { ...DEFAULT_WORK_CONFIG };
+  });
+
   // Data State
   const [reminders, setReminders] = useState<ReminderItem[]>([...INITIAL_REMINDERS]);
   const [preferences, setPreferences] = useState<UserPreferences>({ ...INITIAL_PREFERENCES });
@@ -50,10 +84,15 @@ export default function App() {
   const [logs, setLogs] = useState<NotificationLog[]>([]);
   const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>('default');
 
-  // Modals
+  // Modals & Workout Sessions
   const [activeAlarmReminder, setActiveAlarmReminder] = useState<ReminderItem | null>(null);
   const [activeWorkoutSession, setActiveWorkoutSession] = useState<ReminderItem | null>(null);
+  const [completedWorkoutSummary, setCompletedWorkoutSummary] = useState<{
+    record: CompletedWorkoutRecord;
+    trackPoints: GPXTrackPoint[];
+  } | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showAppInstallerModal, setShowAppInstallerModal] = useState(false);
   const [bannerAlert, setBannerAlert] = useState<{ message: string; type: 'success' | 'info' | 'warn' } | null>(null);
 
   // Initialize data on mount
@@ -177,11 +216,28 @@ export default function App() {
     showBanner('Activity skipped for today.', 'warn');
   };
 
-  const handleFinishWorkout = async (reminder: ReminderItem, durationSeconds: number) => {
+  const handleFinishWorkout = async (
+    reminder: ReminderItem,
+    record: CompletedWorkoutRecord,
+    trackPoints: GPXTrackPoint[]
+  ) => {
     setActiveWorkoutSession(null);
     await notificationService.completeWorkout(reminder.id);
     await fetchData();
-    showBanner(`Workout completed! Great job. (${Math.round(durationSeconds / 60)} mins logged)`, 'success');
+    setCompletedWorkoutSummary({ record, trackPoints });
+    showBanner(`Workout completed! Great job. (${Math.round(record.durationSeconds / 60)} mins logged)`, 'success');
+  };
+
+  const handleUpdateWorkConfig = async (newConfig: WorkScheduleConfig) => {
+    setWorkConfig(newConfig);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('fitbudget_work_config', JSON.stringify(newConfig));
+    }
+    if (currentUser) {
+      const updated = await localAuthService.updateWorkSchedule(newConfig);
+      setCurrentUser(updated);
+    }
+    showBanner('Weekly work & graduate school schedule updated.');
   };
 
   // Quick Test Alarm Trigger
@@ -191,140 +247,189 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col antialiased selection:bg-emerald-500 selection:text-slate-950">
+    <div className="min-h-screen bg-[#F8F7F4] text-[#1F2421] flex flex-col antialiased selection:bg-[#234E3C] selection:text-white">
       <OfflineIndicator />
 
       {/* Top Banner Alert */}
       {bannerAlert && (
         <div
-          className={`fixed top-4 right-4 z-50 flex items-center gap-2 rounded-2xl px-4 py-3 text-xs font-bold shadow-2xl backdrop-blur-md border animate-in slide-in-from-top duration-300 ${
+          className={`fixed top-4 right-4 z-50 flex items-center gap-2 rounded-2xl px-4 py-3 text-xs font-semibold shadow-xl border animate-in slide-in-from-top duration-300 ${
             bannerAlert.type === 'success'
-              ? 'bg-emerald-500/90 text-slate-950 border-emerald-400'
+              ? 'bg-[#234E3C] text-white border-[#1C3F30]'
               : bannerAlert.type === 'warn'
-              ? 'bg-rose-500/90 text-white border-rose-400'
-              : 'bg-cyan-500/90 text-slate-950 border-cyan-400'
+              ? 'bg-[#C2633C] text-white border-[#9C4221]'
+              : 'bg-[#1F2421] text-white border-black'
           }`}
         >
-          <Sparkles className="w-4 h-4" />
+          <Sparkles className="w-4 h-4 text-emerald-300" />
           <span>{bannerAlert.message}</span>
         </div>
       )}
 
-      {/* Main Header */}
-      <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          {/* Logo & Module Tag */}
+      {/* Main Header (Clean, Light, Warm Lifestyle Style) */}
+      <header className="sticky top-0 z-40 border-b border-[#EAE7E0] bg-white/95 backdrop-blur-md">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+          {/* Logo & Clean Title */}
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-tr from-emerald-500 to-cyan-400 shadow-md shadow-emerald-500/20 text-slate-950">
-              <Bell className="w-5 h-5 fill-slate-950" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base font-black tracking-tight text-white">FitBudget</h1>
-                <span className="rounded-md bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 text-[10px] font-mono font-bold text-emerald-400">
-                  MODULE 11
-                </span>
+            <button
+              onClick={() => setActiveTab('today')}
+              className="flex items-center gap-2.5 text-left focus:outline-none group cursor-pointer"
+            >
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#E8F0EC] text-[#234E3C] border border-[#CDE0D5]">
+                <Bell className="w-4 h-4 fill-[#234E3C]" />
               </div>
-              <p className="text-[11px] text-slate-400 hidden sm:block">
-                Smart Notification, Workout Alarm & Reminder System
-              </p>
-            </div>
+              <div>
+                <h1 className="text-base font-bold tracking-tight text-[#1F2421] group-hover:text-[#234E3C] transition">
+                  FitBudget
+                </h1>
+                <p className="text-[11px] text-[#5C6460] hidden sm:block">
+                  Daily Movement & Wellness Companion
+                </p>
+              </div>
+            </button>
           </div>
 
           {/* Right Header Controls */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Quick Test Alarm Button */}
+          <div className="flex items-center gap-2">
+            {/* Quick Test Audio (desktop only, to keep mobile clean) */}
             <button
               onClick={triggerQuickTestAlarm}
-              className="flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 active:scale-95 transition"
-              title="Test high-priority workout alarm immediately"
+              className="hidden md:flex items-center gap-1.5 rounded-xl border border-[#EAE7E0] bg-[#F8F7F4] px-3 py-1.5 text-xs font-medium text-[#5C6460] hover:text-[#1F2421] hover:bg-[#EAE7E0] transition"
+              title="Test reminder chime"
             >
-              <Play className="w-3.5 h-3.5 fill-emerald-300" />
-              <span className="hidden sm:inline">Test Workout Alarm</span>
-              <span className="sm:hidden">Alarm</span>
+              <Volume2 className="w-3.5 h-3.5 text-[#234E3C]" />
+              <span>Test Chime</span>
             </button>
 
-            {/* Storage Mode Quick Switch Button */}
+            {/* Profile Avatar / Login */}
             <button
-              onClick={() => setActiveTab('phone_db')}
-              className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition ${
-                preferences.storageMode === 'local_only'
-                  ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/40'
-                  : 'border-cyan-500/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/40'
-              }`}
-              title="Click to view Local Phone Database, storage usage, and backups"
+              onClick={() => setShowAuthModal(true)}
+              className="flex items-center gap-1.5 rounded-xl border border-[#EAE7E0] bg-[#F8F7F4] px-2.5 py-1.5 text-xs font-medium text-[#1F2421] hover:bg-[#EAE7E0] transition cursor-pointer"
+              title="Your Profile"
             >
-              <HardDrive className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">
-                {preferences.storageMode === 'local_only' ? 'Phone Local DB' : 'Cloud Synced'}
-              </span>
-              <span className="md:hidden">DB</span>
+              <div className="w-5 h-5 rounded-full bg-[#234E3C] text-white flex items-center justify-center font-bold text-[10px]">
+                {currentUser?.fullName.charAt(0).toUpperCase() || 'U'}
+              </div>
+              <span className="hidden sm:inline text-xs font-semibold">{currentUser?.fullName?.split(' ')[0] || 'Profile'}</span>
             </button>
 
-            {/* Notification Permission Indicator */}
+            {/* Menu Button */}
             <button
-              onClick={() => setShowOnboarding(true)}
-              className={`flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition ${
-                permissionStatus === 'granted'
-                  ? 'border-emerald-500/30 bg-emerald-950/40 text-emerald-400'
-                  : 'border-amber-500/30 bg-amber-950/40 text-amber-300'
-              }`}
-              title="Click to manage notification permissions"
+              onClick={() => setIsMenuOpen(true)}
+              className="flex items-center gap-1.5 rounded-xl bg-[#1F2421] hover:bg-[#2E3531] px-3.5 py-1.5 text-xs font-semibold text-white transition active:scale-95 cursor-pointer shadow-xs"
+              title="Open Menu: Modify Schedule, Alarms, Sounds"
             >
-              <Radio className="w-3.5 h-3.5 animate-pulse" />
-              <span className="capitalize hidden md:inline">{permissionStatus}</span>
+              <Menu className="w-4 h-4 text-emerald-300" />
+              <span>Menu</span>
             </button>
-
-            {/* PWA Install Button */}
-            <PWAInstallButton onOpenPhoneDatabase={() => setActiveTab('phone_db')} />
           </div>
         </div>
 
-        {/* Primary Sub-Navigation Bar */}
-        <div className="border-t border-slate-900 bg-slate-950/90 px-4 sm:px-6 lg:px-8 overflow-x-auto scrollbar-none">
-          <div className="max-w-7xl mx-auto flex items-center gap-1 py-1.5">
-            {[
-              { id: 'schedule', label: '📅 Schedule & Alarms', icon: Calendar },
-              { id: 'sounds', label: '🔊 Custom Sounds', icon: Volume2 },
-              { id: 'history', label: `🔔 History (${logs.filter((l) => !l.read).length})`, icon: Bell },
-              { id: 'phone_db', label: '💾 Phone Database & Download', icon: HardDrive },
-              { id: 'devices', label: `📱 Multi-Device (${devices.length})`, icon: Database },
-              { id: 'reliability', label: '🧪 10-Condition Test', icon: ShieldAlert },
-              { id: 'native', label: '🏗️ Native Architecture', icon: Layers },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition whitespace-nowrap ${
-                    isActive
-                      ? 'bg-slate-900 text-emerald-400 border border-slate-800 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
+        {/* Clean Desktop Sub-Navigation Bar (Ultra Friendly) */}
+        <div className="hidden md:block border-t border-[#F2EFEB] bg-white px-4 sm:px-6">
+          <div className="max-w-6xl mx-auto flex items-center justify-between py-2">
+            <div className="flex items-center gap-2">
+              {[
+                { id: 'today', label: '🏠 Today’s Plan', icon: Play },
+                { id: 'schedule', label: '⏰ My Alarms & Reminders', icon: Calendar },
+                { id: 'recommendations', label: '🌙 Sleep & Rest Guidance', icon: Sparkles },
+              ].map((tab) => {
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-bold transition whitespace-nowrap cursor-pointer ${
+                      isActive
+                        ? 'bg-[#E8F0EC] text-[#234E3C] border border-[#CDE0D5] shadow-xs'
+                        : 'text-[#5C6460] hover:text-[#1F2421] hover:bg-[#F8F7F4]'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setIsMenuOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#EAE7E0] bg-[#F8F7F4] hover:bg-[#EAE7E0] text-xs font-bold text-[#1F2421] transition cursor-pointer"
+            >
+              <Sliders className="w-3.5 h-3.5 text-[#234E3C]" />
+              <span>More Options & Help</span>
+            </button>
           </div>
         </div>
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+      <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 pb-24 md:pb-12">
+        {/* 1. HOMEPAGE: TODAY'S WORKOUT HUB (What workout to do now) */}
+        {activeTab === 'today' && (
+          <TodayWorkoutHub
+            reminders={reminders}
+            workConfig={workConfig}
+            preferences={preferences}
+            userName={currentUser?.fullName || preferences.userName || 'Athlete'}
+            onStartWorkout={handleStartWorkout}
+            onTriggerAlarm={(rem) => setActiveAlarmReminder(rem)}
+            onSkipToday={handleSkipToday}
+            onCompleteReminder={async (id) => {
+              await notificationService.completeWorkout(id);
+              await fetchData();
+              showBanner('Routine marked as completed for today! 🎉');
+            }}
+            onOpenScheduleManager={() => setActiveTab('schedule')}
+            onOpenWorkSchedule={() => setActiveTab('work_schedule')}
+            onOpenMenu={() => setIsMenuOpen(true)}
+            onOpenRecommendations={() => setActiveTab('recommendations')}
+            onUpdateWorkConfig={handleUpdateWorkConfig}
+            onUpdateReminders={(updated) => setReminders(updated)}
+            onShowBanner={(msg, type) => showBanner(msg, type)}
+          />
+        )}
+
+        {/* 2. DEDICATED HEALTH RECOMMENDATIONS & SLEEP ADAPTATION */}
+        {activeTab === 'recommendations' && (
+          <SleepRecoveryOptimizer
+            workConfig={workConfig}
+            onUpdateWorkConfig={handleUpdateWorkConfig}
+            onApplyAdaptedSchedule={(newReminders) => {
+              setReminders((prev) => [...prev, ...newReminders]);
+              showBanner(`Synchronized ${newReminders.length} sleep-adapted alarms to your schedule!`);
+            }}
+          />
+        )}
+
+        {/* 3. SCHEDULE MANAGER: MODIFY REMINDERS & ALARMS */}
         {activeTab === 'schedule' && (
           <ScheduleManager
             reminders={reminders}
             preferences={preferences}
+            workConfig={workConfig}
             onUpdateReminder={handleUpdateReminder}
             onAddReminder={handleAddReminder}
             onDeleteReminder={handleDeleteReminder}
             onTriggerAlarmModal={(rem) => setActiveAlarmReminder(rem)}
             onUpdatePreferences={handleUpdatePreferences}
+            onScheduleUpdated={(updated, msg) => {
+              setReminders(updated);
+              showBanner(msg, 'success');
+            }}
             onNavigateToPhoneDb={() => setActiveTab('phone_db')}
+            onNavigateToWorkSchedule={() => setActiveTab('work_schedule')}
+          />
+        )}
+
+        {/* 3. MON-SUN WORK & GRAD SCHOOL PLANNER */}
+        {activeTab === 'work_schedule' && (
+          <WorkSchedulePlanner
+            workConfig={workConfig}
+            onUpdateWorkConfig={handleUpdateWorkConfig}
+            onApplyRecommendations={(newReminders) => {
+              setReminders((prev) => [...prev, ...newReminders]);
+              showBanner(`Added ${newReminders.length} tailored habit alarms to your schedule!`);
+            }}
           />
         )}
 
@@ -362,6 +467,7 @@ export default function App() {
             reminders={reminders}
             onUpdatePreferences={handleUpdatePreferences}
             onRefreshData={fetchData}
+            onOpenAppInstaller={() => setShowAppInstallerModal(true)}
           />
         )}
 
@@ -401,8 +507,11 @@ export default function App() {
       {activeWorkoutSession && (
         <ActiveWorkoutTracker
           reminder={activeWorkoutSession}
+          allReminders={reminders}
           onFinishWorkout={handleFinishWorkout}
           onCancel={() => setActiveWorkoutSession(null)}
+          onUpdateReminders={(updated) => setReminders(updated)}
+          onShowBanner={(msg) => showBanner(msg, 'success')}
         />
       )}
 
@@ -419,25 +528,120 @@ export default function App() {
         />
       )}
 
-      {/* Footer */}
-      <footer className="border-t border-slate-900 bg-slate-950 py-6 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-slate-400">
-            <span className="font-bold text-white">FitBudget</span>
+      {/* App Installer & .apk / .exe Download Modal */}
+      <AppInstallerModal
+        isOpen={showAppInstallerModal}
+        onClose={() => setShowAppInstallerModal(false)}
+        onOpenPhoneDb={() => setActiveTab('phone_db')}
+      />
+
+      {/* Local DB Authentication Modal */}
+      <LocalAuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onUserChanged={(user) => {
+          setCurrentUser(user);
+          if (user.workSchedule) {
+            setWorkConfig(user.workSchedule);
+            localStorage.setItem('fitbudget_work_config', JSON.stringify(user.workSchedule));
+          }
+          setPreferences((prev) => ({ ...prev, userName: user.fullName }));
+          showBanner(`Logged in as ${user.fullName} (Local Phone DB)`);
+        }}
+      />
+
+      {/* Completed Workout Summary Modal with Next-Step Recommendations */}
+      {completedWorkoutSummary && (
+        <WorkoutSummaryModal
+          workout={completedWorkoutSummary.record}
+          trackPoints={completedWorkoutSummary.trackPoints}
+          onClose={() => setCompletedWorkoutSummary(null)}
+          onOpenSchedule={() => setActiveTab('schedule')}
+        />
+      )}
+
+      {/* Mobile Bottom Navigation Bar (Super Friendly & Easy for Non-Tech Users) */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#EAE7E0] px-4 py-2 md:hidden shadow-lg">
+        <div className="max-w-md mx-auto grid grid-cols-4 gap-2">
+          <button
+            onClick={() => setActiveTab('today')}
+            className={`flex flex-col items-center justify-center py-2 rounded-2xl transition cursor-pointer ${
+              activeTab === 'today'
+                ? 'text-[#234E3C] bg-[#E8F0EC] font-bold shadow-xs'
+                : 'text-[#5C6460] hover:text-[#1F2421]'
+            }`}
+          >
+            <span className="text-xl leading-none">🏠</span>
+            <span className="text-xs font-bold mt-1">Today</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('schedule')}
+            className={`flex flex-col items-center justify-center py-2 rounded-2xl transition cursor-pointer ${
+              activeTab === 'schedule'
+                ? 'text-[#234E3C] bg-[#E8F0EC] font-bold shadow-xs'
+                : 'text-[#5C6460] hover:text-[#1F2421]'
+            }`}
+          >
+            <span className="text-xl leading-none">⏰</span>
+            <span className="text-xs font-bold mt-1">Reminders</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('recommendations')}
+            className={`flex flex-col items-center justify-center py-2 rounded-2xl transition cursor-pointer ${
+              activeTab === 'recommendations'
+                ? 'text-[#234E3C] bg-[#E8F0EC] font-bold shadow-xs'
+                : 'text-[#5C6460] hover:text-[#1F2421]'
+            }`}
+          >
+            <span className="text-xl leading-none">🌙</span>
+            <span className="text-xs font-bold mt-1">Sleep</span>
+          </button>
+
+          <button
+            onClick={() => setIsMenuOpen(true)}
+            className="flex flex-col items-center justify-center py-2 rounded-2xl text-[#5C6460] hover:text-[#1F2421] transition cursor-pointer"
+          >
+            <span className="text-xl leading-none">⚙️</span>
+            <span className="text-xs font-bold mt-1">Settings</span>
+          </button>
+        </div>
+      </nav>
+
+      {/* Slide-Over Menu & Modifications Panel */}
+      <AppMenuDrawer
+        isOpen={isMenuOpen}
+        activeTab={activeTab}
+        currentUser={currentUser}
+        storageMode={preferences.storageMode}
+        permissionStatus={permissionStatus}
+        unreadLogsCount={logs.filter((l) => !l.read).length}
+        devicesCount={devices.length}
+        onClose={() => setIsMenuOpen(false)}
+        onSelectTab={(tab) => setActiveTab(tab as any)}
+        onOpenAuthModal={() => setShowAuthModal(true)}
+        onOpenAppInstaller={() => setShowAppInstallerModal(true)}
+        onTriggerQuickAlarm={triggerQuickTestAlarm}
+      />
+
+      {/* Footer (Clean & Friendly) */}
+      <footer className="border-t border-[#EAE7E0] bg-white py-6 text-center text-xs text-[#5C6460]">
+        <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-[#5C6460]">
+            <span className="font-bold text-[#1F2421]">FitBudget</span>
             <span>•</span>
-            <span>Module 11 Notification Engine</span>
-            <span>•</span>
-            <span>PWA & Service Worker Active</span>
+            <span>Your Daily Movement & Routine Companion</span>
           </div>
 
-          <div className="flex items-center gap-4 text-[11px] text-slate-500">
-            <span>Timezone: <strong className="text-emerald-400 font-mono">{preferences.timeZone}</strong></span>
+          <div className="flex items-center gap-4 text-[11px] text-[#5C6460]">
+            <span>Timezone: <strong className="text-[#234E3C]">{preferences.timeZone}</strong></span>
             <span>•</span>
             <button
               onClick={() => setShowOnboarding(true)}
-              className="hover:text-slate-300 underline underline-offset-2"
+              className="hover:text-[#1F2421] underline underline-offset-2 cursor-pointer"
             >
-              Permission Settings
+              Alert Settings
             </button>
           </div>
         </div>

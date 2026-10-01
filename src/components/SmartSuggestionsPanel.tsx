@@ -34,7 +34,7 @@ export const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
   onApplyAdjustment,
   onApplyAll,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'critical' | 'current_day'>('all');
   const [appliedSuggestionIds, setAppliedSuggestionIds] = useState<string[]>([]);
   const [showRationaleForId, setShowRationaleForId] = useState<string | null>(null);

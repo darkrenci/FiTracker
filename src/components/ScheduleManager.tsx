@@ -23,9 +23,11 @@ import {
   Sparkles,
   Zap,
   ShieldAlert,
-  HardDrive
+  HardDrive,
+  Briefcase
 } from 'lucide-react';
 import { ReminderCategory, ReminderItem, SoundPreset, UserPreferences } from '../types/notifications';
+import { WorkScheduleConfig } from '../types/workSchedule';
 import { notificationService } from '../services/notificationService';
 import { soundEngine } from '../services/soundEngine';
 import {
@@ -36,16 +38,21 @@ import {
   formatTime12h
 } from '../services/smartSuggestionEngine';
 import { SmartSuggestionsPanel } from './SmartSuggestionsPanel';
+import { ScheduleAdaptationService, LateWorkoutStatus } from '../services/scheduleAdaptationService';
+import { LateWorkoutAdjustmentModal } from './LateWorkoutAdjustmentModal';
 
 interface ScheduleManagerProps {
   reminders: ReminderItem[];
   preferences: UserPreferences;
+  workConfig?: WorkScheduleConfig;
   onUpdateReminder: (id: string, updates: Partial<ReminderItem>) => void;
   onAddReminder: (reminder: Partial<ReminderItem>) => void;
   onDeleteReminder: (id: string) => void;
   onTriggerAlarmModal: (reminder: ReminderItem) => void;
   onUpdatePreferences: (updates: Partial<UserPreferences>) => void;
+  onScheduleUpdated?: (updated: ReminderItem[], message: string) => void;
   onNavigateToPhoneDb?: () => void;
+  onNavigateToWorkSchedule?: () => void;
 }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -67,18 +74,30 @@ const POPULAR_TIMEZONES = [
 export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   reminders,
   preferences,
+  workConfig,
   onUpdateReminder,
   onAddReminder,
   onDeleteReminder,
   onTriggerAlarmModal,
   onUpdatePreferences,
+  onScheduleUpdated,
   onNavigateToPhoneDb,
+  onNavigateToWorkSchedule,
 }) => {
   const [activeTab, setActiveTab] = useState<'workouts' | 'meals' | 'sleep' | 'hydration'>('workouts');
   const [selectedDay, setSelectedDay] = useState<number>(new Date().getDay());
   const [isEditingModalOpen, setIsEditingModalOpen] = useState(false);
+  const [isLateModalOpen, setIsLateModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Partial<ReminderItem> | null>(null);
   const [waterLoggedToday, setWaterLoggedToday] = useState(1250); // ml
+
+  const now = new Date();
+  const currentMins = now.getHours() * 60 + now.getMinutes();
+  const lateStatus: LateWorkoutStatus = ScheduleAdaptationService.detectLateStatus(
+    reminders,
+    selectedDay,
+    currentMins
+  );
 
   // Smart Suggestion Engine: Analyze schedule across all days and preferences
   const allSuggestions = useMemo(() => {
@@ -162,18 +181,18 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Header: Time Zone & Quick Summary */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-3xl border border-[#EAE7E0] bg-white p-5 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#E8F0EC] border border-[#CDE0D5] text-[#234E3C]">
             <Globe className="w-5 h-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-white uppercase tracking-wider">Active Time Zone:</span>
+              <span className="text-xs font-semibold text-[#1F2421]">Your Time Zone:</span>
               <select
                 value={preferences.timeZone}
                 onChange={(e) => onUpdatePreferences({ timeZone: e.target.value })}
-                className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs font-semibold text-emerald-400 focus:outline-none focus:border-emerald-500"
+                className="rounded-xl border border-[#EAE7E0] bg-[#F8F7F4] px-2.5 py-1 text-xs font-semibold text-[#234E3C] focus:outline-none focus:border-[#234E3C]"
               >
                 {POPULAR_TIMEZONES.map((tz) => (
                   <option key={tz} value={tz}>
@@ -182,33 +201,68 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                 ))}
               </select>
             </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              All reminders calculate accurate solar time according to {preferences.timeZone}.
+            <p className="text-[11px] text-[#5C6460] mt-0.5">
+              Reminders adjust automatically to {preferences.timeZone}.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {onNavigateToPhoneDb && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {onNavigateToWorkSchedule && (
             <button
-              onClick={onNavigateToPhoneDb}
-              className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 px-3 py-2 text-xs font-semibold text-slate-300 hover:text-white hover:border-slate-600 transition"
-              title="Manage Phone Database & Download Backups"
+              onClick={onNavigateToWorkSchedule}
+              className="flex items-center gap-1.5 rounded-2xl border border-[#EAE7E0] bg-[#F8F7F4] hover:bg-[#EAE7E0] px-3 py-2 text-xs font-semibold text-[#1F2421] transition cursor-pointer"
+              title="Customize Monday to Sunday routine"
             >
-              <HardDrive className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">Phone Database</span>
+              <Briefcase className="w-3.5 h-3.5 text-[#C2633C]" />
+              <span className="hidden sm:inline">Work & Study Planner</span>
+              <span className="sm:hidden">Planner</span>
             </button>
           )}
 
           <button
+            onClick={() => setIsLateModalOpen(true)}
+            className="flex items-center gap-1.5 rounded-2xl border border-[#F5D8C7] bg-[#FBF1EB] px-3 py-2 text-xs font-semibold text-[#9C4221] hover:bg-[#F5D8C7] transition cursor-pointer"
+            title="Adjust and shift schedule if starting late"
+          >
+            <Clock className="w-3.5 h-3.5 text-[#C2633C]" />
+            <span className="hidden sm:inline">Adjust Schedule</span>
+            <span className="sm:hidden">Adjust</span>
+          </button>
+
+          <button
             onClick={handleCreateNew}
-            className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 px-3.5 py-2 text-xs font-bold text-slate-950 shadow-md shadow-emerald-500/20 hover:brightness-110 active:scale-95 transition"
+            className="flex items-center justify-center gap-1.5 rounded-2xl bg-[#234E3C] hover:bg-[#1C3F30] px-4 py-2 text-xs font-semibold text-white shadow-sm transition cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Add Reminder</span>
+            <span>Add Habit</span>
           </button>
         </div>
       </div>
+
+      {/* Late Workout Overdue Alert Banner (Gentle, Non-techy) */}
+      {lateStatus.hasLateWorkout && lateStatus.overdueWorkout && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-3xl bg-[#FBF1EB] border border-[#F5D8C7] text-xs shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#C2633C] flex-shrink-0" />
+            <div>
+              <span className="font-semibold text-[#9C4221] block">
+                Running late for "{lateStatus.overdueWorkout.title}" (+{lateStatus.overdueMinutes}m).
+              </span>
+              <span className="text-[11px] text-[#5C6460]">
+                Take your time! You can push your schedule back or switch to a quick 15m stretch.
+              </span>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setIsLateModalOpen(true)}
+            className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-[#F8F7F4] border border-[#F5D8C7] text-[#9C4221] font-semibold text-xs transition shadow-xs self-start sm:self-center cursor-pointer"
+          >
+            Adjust Today
+          </button>
+        </div>
+      )}
 
       {/* Smart Suggestion Engine Optimization Panel */}
       <SmartSuggestionsPanel
@@ -219,24 +273,24 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
       />
 
       {/* Category Navigation Tabs */}
-      <div className="flex rounded-2xl border border-slate-800 bg-slate-950/80 p-1.5 gap-1 overflow-x-auto">
+      <div className="flex rounded-3xl border border-[#EAE7E0] bg-white p-1.5 gap-1.5 overflow-x-auto shadow-xs">
         {[
-          { id: 'workouts', label: '🏋️ Weekly Workouts & Alarms', count: reminders.filter((r) => ['workout', 'walking', 'running', 'recovery'].includes(r.category)).length },
-          { id: 'meals', label: '🍽️ Meals (Breakfast, Lunch, Dinner)', count: reminders.filter((r) => r.category === 'meal').length },
-          { id: 'hydration', label: '💧 Hydration Tracking', count: 'Active' },
-          { id: 'sleep', label: '🌙 Sleep & Recovery', count: reminders.filter((r) => ['sleep', 'summary'].includes(r.category)).length },
+          { id: 'workouts', label: '🌿 Daily Movement & Workouts', count: reminders.filter((r) => ['workout', 'walking', 'running', 'recovery'].includes(r.category)).length },
+          { id: 'meals', label: '🍽️ Meals & Nutrition', count: reminders.filter((r) => r.category === 'meal').length },
+          { id: 'hydration', label: '💧 Water Intake', count: 'Active' },
+          { id: 'sleep', label: '🌙 Sleep & Rest', count: reminders.filter((r) => ['sleep', 'summary'].includes(r.category)).length },
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`flex-1 min-w-[130px] flex items-center justify-center gap-2 rounded-xl py-2 px-3 text-xs font-bold transition whitespace-nowrap ${
+            className={`flex-1 min-w-[140px] flex items-center justify-center gap-2 rounded-2xl py-2.5 px-3.5 text-xs font-semibold transition whitespace-nowrap cursor-pointer ${
               activeTab === tab.id
-                ? 'bg-slate-800 text-white shadow-sm border border-slate-700'
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'bg-[#E8F0EC] text-[#234E3C] shadow-xs border border-[#CDE0D5]'
+                : 'text-[#5C6460] hover:text-[#1F2421] hover:bg-[#F8F7F4]'
             }`}
           >
             <span>{tab.label}</span>
-            <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] text-emerald-400 font-mono">
+            <span className="rounded-full bg-white px-2 py-0.5 text-[10px] text-[#234E3C] font-semibold border border-[#EAE7E0]">
               {tab.count}
             </span>
           </button>
@@ -320,40 +374,25 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
         </div>
       ) : (
         <>
-          {/* Day of Week Selector Bar (Sun - Sat) with Conflict Badges */}
-          <div className="flex items-center justify-between gap-1 overflow-x-auto pb-1">
+          {/* Day of Week Selector Bar (Sun - Sat) */}
+          <div className="flex items-center justify-between gap-1.5 overflow-x-auto pb-1">
             {DAYS.map((d, index) => {
               const isSelected = selectedDay === index;
               const countForDay = filteredReminders.filter((r) => r.daysOfWeek.includes(index)).length;
               const daySuggestions = allSuggestions.filter((s) => s.affectedDays.includes(index));
-              const hasCritical = daySuggestions.some((s) => s.severity === 'critical');
 
               return (
                 <button
                   key={d}
                   onClick={() => setSelectedDay(index)}
-                  className={`relative flex-1 min-w-[48px] py-2.5 px-2 rounded-2xl border text-center transition ${
+                  className={`relative flex-1 min-w-[50px] py-2.5 px-2 rounded-2xl border text-center transition cursor-pointer ${
                     isSelected
-                      ? 'border-emerald-500 bg-emerald-500/15 text-white shadow-md shadow-emerald-500/10'
-                      : 'border-slate-800/80 bg-slate-900/60 text-slate-400 hover:border-slate-700'
+                      ? 'border-[#234E3C] bg-[#E8F0EC] text-[#234E3C] font-bold shadow-xs'
+                      : 'border-[#EAE7E0] bg-white text-[#5C6460] hover:bg-[#F8F7F4]'
                   }`}
                 >
-                  {/* Conflict indicator badge on day */}
-                  {daySuggestions.length > 0 && (
-                    <span
-                      className={`absolute -top-1.5 -right-1 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-black shadow-sm ${
-                        hasCritical
-                          ? 'bg-rose-500 text-white animate-pulse'
-                          : 'bg-amber-400 text-slate-950 font-bold'
-                      }`}
-                      title={`${daySuggestions.length} scheduling issue(s) detected on ${FULL_DAYS[index]}`}
-                    >
-                      {daySuggestions.length}
-                    </span>
-                  )}
-
-                  <div className="text-[11px] font-bold uppercase">{d}</div>
-                  <div className={`mt-0.5 text-xs font-mono font-bold ${isSelected ? 'text-emerald-400' : 'text-slate-500'}`}>
+                  <div className="text-xs font-bold uppercase">{d}</div>
+                  <div className={`mt-0.5 text-xs font-bold ${isSelected ? 'text-[#234E3C]' : 'text-[#8F9792]'}`}>
                     {countForDay}
                   </div>
                 </button>
@@ -484,38 +523,25 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                 return (
                   <div
                     key={reminder.id}
-                    className={`relative overflow-hidden rounded-2xl border p-4 sm:p-5 transition ${
+                    className={`relative overflow-hidden rounded-3xl border p-4 sm:p-5 transition shadow-xs ${
                       !reminder.enabled
-                        ? 'border-slate-800/50 bg-slate-950/40 opacity-50'
+                        ? 'border-[#EAE7E0] bg-[#F8F7F4]/60 opacity-60'
                         : isCompleted
-                        ? 'border-emerald-500/40 bg-emerald-950/20'
+                        ? 'border-[#CDE0D5] bg-[#E8F0EC]/40'
                         : isSkipped
-                        ? 'border-rose-500/30 bg-rose-950/15'
+                        ? 'border-[#EAE7E0] bg-[#F8F7F4]/40 opacity-50'
                         : isSnoozed
-                        ? 'border-cyan-500/40 bg-cyan-950/20'
-                        : activeConflict
-                        ? 'border-amber-500/40 bg-amber-950/15 hover:border-amber-500/60'
-                        : 'border-slate-800 bg-slate-900/80 hover:border-slate-700'
+                        ? 'border-amber-300 bg-amber-50/40'
+                        : 'border-[#EAE7E0] bg-white hover:border-[#234E3C]/30'
                     }`}
                   >
-                    {/* Left Accent Bar */}
-                    <div
-                      className={`absolute top-0 bottom-0 left-0 w-1.5 ${
-                        activeConflict
-                          ? 'bg-amber-400'
-                          : reminder.isAlarm
-                          ? 'bg-gradient-to-b from-emerald-500 to-cyan-400'
-                          : 'bg-slate-700'
-                      }`}
-                    />
-
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       {/* Reminder Info */}
                       <div className="flex items-start gap-3.5 min-w-0">
                         {/* Time Badge */}
-                        <div className="flex-shrink-0 flex flex-col items-center justify-center rounded-xl bg-slate-950 border border-slate-800 px-3 py-1.5">
-                          <span className="text-base font-black font-mono text-white">{reminder.time}</span>
-                          <span className="text-[10px] text-slate-400 uppercase font-semibold">
+                        <div className="flex-shrink-0 flex flex-col items-center justify-center rounded-2xl bg-[#F8F7F4] border border-[#EAE7E0] px-3.5 py-2">
+                          <span className="text-base font-extrabold text-[#1F2421]">{reminder.time}</span>
+                          <span className="text-[10px] text-[#5C6460] uppercase font-bold">
                             {parseInt(reminder.time.split(':')[0], 10) >= 12 ? 'PM' : 'AM'}
                           </span>
                         </div>
@@ -523,92 +549,59 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                         {/* Title & Description */}
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h4 className="text-sm font-bold text-white truncate">{reminder.title}</h4>
+                            <h4 className="text-sm font-bold text-[#1F2421] truncate">{reminder.title}</h4>
                             {reminder.isAlarm && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                              <span className="inline-flex items-center gap-1 rounded-full bg-[#E8F0EC] px-2.5 py-0.5 text-[10px] font-bold text-[#234E3C]">
                                 <AlarmClock className="w-3 h-3" />
                                 <span>ALARM</span>
                               </span>
                             )}
-                            {activeConflict && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 border border-amber-500/40 px-2 py-0.5 text-[10px] font-extrabold text-amber-300">
-                                <AlertTriangle className="w-3 h-3" />
-                                <span>Conflict Detected</span>
-                              </span>
-                            )}
                             {isCompleted && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
-                                <Check className="w-3 h-3" />
-                                <span>Completed Today</span>
+                              <span className="inline-flex items-center gap-1 rounded-full bg-[#E8F0EC] px-2.5 py-0.5 text-[10px] font-bold text-[#234E3C]">
+                                <Check className="w-3 h-3 stroke-[3]" />
+                                <span>Done Today</span>
                               </span>
                             )}
                             {isSkipped && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300">
-                                <X className="w-3 h-3" />
-                                <span>Skipped Today</span>
-                              </span>
-                            )}
-                            {isSnoozed && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-cyan-500/20 px-2 py-0.5 text-[10px] font-bold text-cyan-300">
-                                <RotateCcw className="w-3 h-3" />
-                                <span>Snoozed until {new Date(reminder.snoozedUntil!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              <span className="inline-flex items-center gap-1 rounded-full bg-[#FBF1EB] px-2.5 py-0.5 text-[10px] font-bold text-[#9C4221]">
+                                <span>Skipped</span>
                               </span>
                             )}
                           </div>
 
-                          <p className="mt-1 text-xs text-slate-300 line-clamp-1">{reminder.message}</p>
+                          <p className="mt-1 text-xs text-[#5C6460] line-clamp-1">{reminder.message}</p>
 
-                          <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
+                          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[#5C6460]">
                             {reminder.durationMinutes && (
                               <span className="flex items-center gap-1">
-                                <Clock className="w-3 h-3 text-emerald-400" />
+                                <Clock className="w-3.5 h-3.5 text-[#234E3C]" />
                                 <span>{reminder.durationMinutes} mins</span>
                               </span>
                             )}
                             <span className="flex items-center gap-1">
-                              <Volume2 className="w-3 h-3 text-cyan-400" />
-                              <span className="font-mono">{reminder.soundPreset}</span>
+                              <Volume2 className="w-3.5 h-3.5 text-[#5C6460]" />
+                              <span>{reminder.soundPreset}</span>
                             </span>
-                            {reminder.vibrate && (
-                              <span className="flex items-center gap-1 text-teal-400">
-                                <Vibrate className="w-3 h-3" />
-                                <span>Vibrate</span>
-                              </span>
-                            )}
-                            {reminder.targetMetric && (
-                              <span className="text-slate-400 border-l border-slate-700 pl-2">
-                                {reminder.targetMetric}
-                              </span>
-                            )}
                           </div>
                         </div>
                       </div>
 
                       {/* Action Buttons */}
-                      <div className="flex items-center gap-1.5 self-end sm:self-center">
+                      <div className="flex items-center gap-2 self-end sm:self-center">
                         {/* Test Alarm Trigger */}
                         <button
                           onClick={() => onTriggerAlarmModal(reminder)}
-                          className="flex items-center gap-1 rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 active:scale-95 transition"
-                          title="Trigger full Workout Alarm modal"
+                          className="flex items-center gap-1 rounded-2xl bg-[#E8F0EC] hover:bg-[#D7E6DD] px-3.5 py-2 text-xs font-bold text-[#234E3C] transition cursor-pointer"
+                          title="Play chime sound"
                         >
-                          <Play className="w-3.5 h-3.5 fill-emerald-300" />
-                          <span>Test Alarm</span>
-                        </button>
-
-                        {/* Open in Device Alarm */}
-                        <button
-                          onClick={() => notificationService.openInDeviceAlarm(reminder)}
-                          className="rounded-xl border border-slate-700 bg-slate-800/80 p-2 text-slate-300 hover:bg-slate-700 hover:text-white transition"
-                          title="Open in Device Alarm (Android Clock / iOS Calendar)"
-                        >
-                          <AlarmClock className="w-3.5 h-3.5" />
+                          <Play className="w-3.5 h-3.5 fill-[#234E3C]" />
+                          <span>Test Chime</span>
                         </button>
 
                         {/* Edit */}
                         <button
                           onClick={() => handleEdit(reminder)}
-                          className="rounded-xl border border-slate-700 bg-slate-800/80 p-2 text-slate-300 hover:bg-slate-700 hover:text-white transition"
+                          className="rounded-2xl border border-[#EAE7E0] bg-[#F8F7F4] hover:bg-[#EAE7E0] px-3 py-2 text-xs font-bold text-[#1F2421] transition cursor-pointer"
                           title="Edit Reminder"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -617,12 +610,12 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                         {/* Toggle Active */}
                         <button
                           onClick={() => onUpdateReminder(reminder.id, { enabled: !reminder.enabled })}
-                          className={`rounded-xl border p-2 text-xs font-bold transition ${
+                          className={`rounded-2xl border p-2 text-xs font-bold transition cursor-pointer ${
                             reminder.enabled
-                              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-                              : 'border-slate-800 bg-slate-950 text-slate-500'
+                              ? 'border-[#234E3C] bg-[#234E3C] text-white'
+                              : 'border-[#EAE7E0] bg-[#F8F7F4] text-[#8F9792]'
                           }`}
-                          title={reminder.enabled ? 'Disable Reminder' : 'Enable Reminder'}
+                          title={reminder.enabled ? 'Click to pause' : 'Click to activate'}
                         >
                           {reminder.enabled ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : <X className="w-3.5 h-3.5" />}
                         </button>
@@ -630,7 +623,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                         {/* Delete */}
                         <button
                           onClick={() => onDeleteReminder(reminder.id)}
-                          className="rounded-xl border border-slate-800 bg-slate-900/60 p-2 text-slate-500 hover:border-rose-500/40 hover:bg-rose-500/10 hover:text-rose-400 transition"
+                          className="rounded-2xl border border-[#EAE7E0] bg-[#F8F7F4] p-2 text-[#8F9792] hover:border-rose-400 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer"
                           title="Delete Reminder"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -666,17 +659,17 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
         </>
       )}
 
-      {/* Edit / Create Reminder Modal */}
+      {/* Edit / Create Reminder Modal (Warm Lifestyle Style) */}
       {isEditingModalOpen && editingItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="w-full max-w-lg rounded-3xl border border-slate-800 bg-slate-900 p-6 md:p-8 shadow-2xl text-slate-100 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-base font-bold text-white">
-                {editingItem.id ? 'Edit Reminder' : 'New Reminder'}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in">
+          <div className="w-full max-w-lg rounded-3xl border border-[#EAE7E0] bg-white p-6 md:p-8 shadow-2xl text-[#1F2421] max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-[#EAE7E0]">
+              <h3 className="text-lg font-bold text-[#1F2421]">
+                {editingItem.id ? 'Edit Reminder' : 'Add New Reminder'}
               </h3>
               <button
                 onClick={() => setIsEditingModalOpen(false)}
-                className="text-slate-400 hover:text-white"
+                className="p-1 rounded-xl text-[#5C6460] hover:text-[#1F2421] hover:bg-[#F8F7F4] cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -684,41 +677,41 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
 
             <div className="mt-4 space-y-4">
               <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Title</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-[#5C6460]">Activity Name</label>
                 <input
                   type="text"
                   value={editingItem.title || ''}
                   onChange={(e) => setEditingItem({ ...editingItem, title: e.target.value })}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"
-                  placeholder="e.g. Night Walking Reminder"
+                  className="mt-1 w-full rounded-2xl border border-[#EAE7E0] bg-[#F8F7F4] px-4 py-2.5 text-sm text-[#1F2421] focus:border-[#234E3C] focus:outline-none"
+                  placeholder="e.g. Evening Walking or Stretch"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Scheduled Time (24h)</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-[#5C6460]">Time</label>
                   <input
                     type="time"
                     value={editingItem.time || '19:00'}
                     onChange={(e) => setEditingItem({ ...editingItem, time: e.target.value })}
-                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs font-mono text-white focus:border-emerald-500 focus:outline-none"
+                    className="mt-1 w-full rounded-2xl border border-[#EAE7E0] bg-[#F8F7F4] px-4 py-2.5 text-sm font-bold text-[#1F2421] focus:border-[#234E3C] focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Duration (Minutes)</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-[#5C6460]">Duration (Mins)</label>
                   <input
                     type="number"
-                    value={editingItem.durationMinutes || 30}
-                    onChange={(e) => setEditingItem({ ...editingItem, durationMinutes: parseInt(e.target.value, 10) || 30 })}
-                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"
+                    value={editingItem.durationMinutes || 20}
+                    onChange={(e) => setEditingItem({ ...editingItem, durationMinutes: parseInt(e.target.value, 10) || 20 })}
+                    className="mt-1 w-full rounded-2xl border border-[#EAE7E0] bg-[#F8F7F4] px-4 py-2.5 text-sm text-[#1F2421] focus:border-[#234E3C] focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Active Days of Week</label>
-                <div className="mt-1.5 flex gap-1">
+                <label className="text-xs font-bold uppercase tracking-wider text-[#5C6460]">Days of the Week</label>
+                <div className="mt-1.5 flex gap-1.5">
                   {DAYS.map((d, idx) => {
                     const isChecked = editingItem.daysOfWeek?.includes(idx);
                     return (
@@ -732,10 +725,10 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                             : [...current, idx].sort();
                           setEditingItem({ ...editingItem, daysOfWeek: updated });
                         }}
-                        className={`flex-1 py-2 text-xs font-bold rounded-xl border transition ${
+                        className={`flex-1 py-2 text-xs font-bold rounded-2xl border transition cursor-pointer ${
                           isChecked
-                            ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300'
-                            : 'border-slate-800 bg-slate-950 text-slate-500'
+                            ? 'border-[#234E3C] bg-[#E8F0EC] text-[#234E3C] shadow-xs'
+                            : 'border-[#EAE7E0] bg-[#F8F7F4] text-[#8F9792]'
                         }`}
                       >
                         {d}
@@ -746,91 +739,114 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
               </div>
 
               <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Notification Message</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-[#5C6460]">Friendly Message</label>
                 <textarea
                   rows={2}
                   value={editingItem.message || ''}
                   onChange={(e) => setEditingItem({ ...editingItem, message: e.target.value })}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs text-white focus:border-emerald-500 focus:outline-none"
-                  placeholder="e.g. Ku, your 30-minute evening walk is scheduled. Ready to get moving?"
+                  className="mt-1 w-full rounded-2xl border border-[#EAE7E0] bg-[#F8F7F4] p-3 text-sm text-[#1F2421] focus:border-[#234E3C] focus:outline-none"
+                  placeholder="e.g. Time for your 20-minute walk! Ready to stretch and feel energized?"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Notification Sound</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-[#5C6460]">Chime Sound</label>
                   <select
                     value={editingItem.soundPreset || 'pulse-energy'}
                     onChange={(e) => setEditingItem({ ...editingItem, soundPreset: e.target.value as SoundPreset })}
-                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:outline-none"
+                    className="mt-1 w-full rounded-2xl border border-[#EAE7E0] bg-[#F8F7F4] px-3.5 py-2.5 text-xs font-semibold text-[#1F2421] focus:outline-none"
                   >
-                    <option value="pulse-energy">⚡ Pulse Energy</option>
-                    <option value="digital-beep">⏰ Classic Digital Beep</option>
+                    <option value="pulse-energy">⚡ Energy Chime</option>
+                    <option value="digital-beep">⏰ Gentle Beep</option>
                     <option value="zen-chime">🧘 Zen Singing Bowl</option>
                     <option value="water-drop">💧 Aqua Droplet</option>
                     <option value="dining-bell">🍽️ Dining Bell</option>
-                    <option value="military-bugle">🎺 Bugle Fanfare</option>
-                    <option value="radar-ping">📡 Radar Ping</option>
+                    <option value="military-bugle">🎺 Fanfare</option>
+                    <option value="radar-ping">📡 Gentle Ping</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Postpone Interval</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-[#5C6460]">Remind Again If Missed</label>
                   <select
                     value={editingItem.repeatIntervalMinutes || 10}
                     onChange={(e) => setEditingItem({ ...editingItem, repeatIntervalMinutes: parseInt(e.target.value, 10) })}
-                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:outline-none"
+                    className="mt-1 w-full rounded-2xl border border-[#EAE7E0] bg-[#F8F7F4] px-3.5 py-2.5 text-xs font-semibold text-[#1F2421] focus:outline-none"
                   >
                     <option value={0}>Notify Once Only</option>
-                    <option value={5}>Remind again after 5 min</option>
-                    <option value={10}>Remind again after 10 min</option>
-                    <option value={15}>Remind again after 15 min</option>
-                    <option value={30}>Remind again after 30 min</option>
+                    <option value={5}>After 5 mins</option>
+                    <option value={10}>After 10 mins</option>
+                    <option value={15}>After 15 mins</option>
+                    <option value={30}>After 30 mins</option>
                   </select>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-2">
-                <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+              <div className="flex items-center justify-between pt-1">
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-[#1F2421]">
                   <input
                     type="checkbox"
                     checked={editingItem.isAlarm ?? true}
                     onChange={(e) => setEditingItem({ ...editingItem, isAlarm: e.target.checked })}
-                    className="h-4 w-4 rounded accent-emerald-500"
+                    className="h-4 w-4 rounded accent-[#234E3C]"
                   />
-                  <span>Trigger Fullscreen Workout Alarm</span>
+                  <span>Play audio reminder screen</span>
                 </label>
 
-                <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-[#1F2421]">
                   <input
                     type="checkbox"
                     checked={editingItem.vibrate ?? true}
                     onChange={(e) => setEditingItem({ ...editingItem, vibrate: e.target.checked })}
-                    className="h-4 w-4 rounded accent-emerald-500"
+                    className="h-4 w-4 rounded accent-[#234E3C]"
                   />
-                  <span>Vibration Pattern</span>
+                  <span>Vibrate phone</span>
                 </label>
               </div>
             </div>
 
-            <div className="mt-6 flex justify-end gap-2 pt-3 border-t border-slate-800">
+            <div className="mt-6 flex justify-end gap-2 pt-3 border-t border-[#EAE7E0]">
               <button
                 type="button"
                 onClick={() => setIsEditingModalOpen(false)}
-                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white"
+                className="rounded-2xl border border-[#EAE7E0] bg-[#F8F7F4] hover:bg-[#EAE7E0] px-4 py-2.5 text-xs font-bold text-[#5C6460] cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleSaveModal}
-                className="rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 px-4 py-2 text-xs font-bold text-slate-950 shadow-md shadow-emerald-500/20 hover:brightness-110"
+                className="rounded-2xl bg-[#234E3C] hover:bg-[#1C3F30] px-5 py-2.5 text-xs font-bold text-white shadow-xs cursor-pointer"
               >
-                Save Reminder
+                Save Habit
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Late Workout Adjustment Modal */}
+      {lateStatus.overdueWorkout && (
+        <LateWorkoutAdjustmentModal
+          isOpen={isLateModalOpen}
+          overdueWorkout={lateStatus.overdueWorkout}
+          overdueMinutes={lateStatus.overdueMinutes}
+          subsequentReminders={lateStatus.subsequentReminders}
+          allReminders={reminders}
+          workConfig={workConfig || {
+            defaultStartTime: '07:00',
+            defaultEndTime: '18:00',
+            shifts: {},
+          }}
+          dayOfWeek={selectedDay}
+          onClose={() => setIsLateModalOpen(false)}
+          onScheduleUpdated={(updated, msg) => {
+            if (onScheduleUpdated) {
+              onScheduleUpdated(updated, msg);
+            }
+          }}
+        />
       )}
     </div>
   );
