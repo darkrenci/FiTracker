@@ -19,7 +19,9 @@ import {
   Briefcase,
   User,
   Menu,
-  Sliders
+  Sliders,
+  Moon,
+  Activity
 } from 'lucide-react';
 import {
   DeviceSubscription,
@@ -325,26 +327,29 @@ export default function App() {
           </div>
         </div>
 
-        {/* Clean Desktop Sub-Navigation Bar (Ultra Friendly) */}
-        <div className="hidden md:block border-t border-[#F2EFEB] bg-white px-4 sm:px-6">
+        {/* Clean Desktop Navigation Bar */}
+        <div className="hidden md:block border-t border-stone-200/80 bg-white px-4 sm:px-6">
           <div className="max-w-6xl mx-auto flex items-center justify-between py-2">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               {[
-                { id: 'today', label: '🏠 Today’s Plan', icon: Play },
-                { id: 'schedule', label: '⏰ My Alarms & Reminders', icon: Calendar },
-                { id: 'recommendations', label: '🌙 Sleep & Rest Guidance', icon: Sparkles },
+                { id: 'today', label: 'Today', icon: Play },
+                { id: 'schedule', label: 'Schedule & Alarms', icon: Calendar },
+                { id: 'recommendations', label: 'Sleep & Recovery', icon: Moon },
+                { id: 'work_schedule', label: 'Work & Class Planner', icon: Briefcase },
               ].map((tab) => {
                 const isActive = activeTab === tab.id;
+                const IconComponent = tab.icon;
                 return (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as any)}
-                    className={`flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-bold transition whitespace-nowrap cursor-pointer ${
+                    className={`flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-medium transition cursor-pointer ${
                       isActive
-                        ? 'bg-[#E8F0EC] text-[#234E3C] border border-[#CDE0D5] shadow-xs'
-                        : 'text-[#5C6460] hover:text-[#1F2421] hover:bg-[#F8F7F4]'
+                        ? 'bg-stone-100 text-stone-900 font-semibold'
+                        : 'text-stone-500 hover:text-stone-900 hover:bg-stone-50'
                     }`}
                   >
+                    <IconComponent className={`w-3.5 h-3.5 ${isActive ? 'text-[#1B4332]' : 'text-stone-400'}`} />
                     <span>{tab.label}</span>
                   </button>
                 );
@@ -353,10 +358,10 @@ export default function App() {
 
             <button
               onClick={() => setIsMenuOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#EAE7E0] bg-[#F8F7F4] hover:bg-[#EAE7E0] text-xs font-bold text-[#1F2421] transition cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-stone-500 hover:text-stone-900 hover:bg-stone-50 transition cursor-pointer"
             >
-              <Sliders className="w-3.5 h-3.5 text-[#234E3C]" />
-              <span>More Options & Help</span>
+              <Sliders className="w-3.5 h-3.5 text-stone-400" />
+              <span>Settings & Sync</span>
             </button>
           </div>
         </div>
@@ -560,51 +565,51 @@ export default function App() {
         />
       )}
 
-      {/* Mobile Bottom Navigation Bar (Super Friendly & Easy for Non-Tech Users) */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#EAE7E0] px-4 py-2 md:hidden shadow-lg">
-        <div className="max-w-md mx-auto grid grid-cols-4 gap-2">
+      {/* Mobile Bottom Navigation Bar (Clean & Native Feel) */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200 px-4 py-2 md:hidden">
+        <div className="max-w-md mx-auto grid grid-cols-4 gap-1">
           <button
             onClick={() => setActiveTab('today')}
-            className={`flex flex-col items-center justify-center py-2 rounded-2xl transition cursor-pointer ${
+            className={`flex flex-col items-center justify-center py-1.5 rounded-xl transition cursor-pointer ${
               activeTab === 'today'
-                ? 'text-[#234E3C] bg-[#E8F0EC] font-bold shadow-xs'
-                : 'text-[#5C6460] hover:text-[#1F2421]'
+                ? 'text-[#1B4332]'
+                : 'text-stone-400 hover:text-stone-700'
             }`}
           >
-            <span className="text-xl leading-none">🏠</span>
-            <span className="text-xs font-bold mt-1">Today</span>
+            <Activity className="w-5 h-5" />
+            <span className="text-[11px] font-medium mt-1">Today</span>
           </button>
 
           <button
             onClick={() => setActiveTab('schedule')}
-            className={`flex flex-col items-center justify-center py-2 rounded-2xl transition cursor-pointer ${
+            className={`flex flex-col items-center justify-center py-1.5 rounded-xl transition cursor-pointer ${
               activeTab === 'schedule'
-                ? 'text-[#234E3C] bg-[#E8F0EC] font-bold shadow-xs'
-                : 'text-[#5C6460] hover:text-[#1F2421]'
+                ? 'text-[#1B4332]'
+                : 'text-stone-400 hover:text-stone-700'
             }`}
           >
-            <span className="text-xl leading-none">⏰</span>
-            <span className="text-xs font-bold mt-1">Reminders</span>
+            <Calendar className="w-5 h-5" />
+            <span className="text-[11px] font-medium mt-1">Schedule</span>
           </button>
 
           <button
             onClick={() => setActiveTab('recommendations')}
-            className={`flex flex-col items-center justify-center py-2 rounded-2xl transition cursor-pointer ${
+            className={`flex flex-col items-center justify-center py-1.5 rounded-xl transition cursor-pointer ${
               activeTab === 'recommendations'
-                ? 'text-[#234E3C] bg-[#E8F0EC] font-bold shadow-xs'
-                : 'text-[#5C6460] hover:text-[#1F2421]'
+                ? 'text-[#1B4332]'
+                : 'text-stone-400 hover:text-stone-700'
             }`}
           >
-            <span className="text-xl leading-none">🌙</span>
-            <span className="text-xs font-bold mt-1">Sleep</span>
+            <Moon className="w-5 h-5" />
+            <span className="text-[11px] font-medium mt-1">Sleep</span>
           </button>
 
           <button
             onClick={() => setIsMenuOpen(true)}
-            className="flex flex-col items-center justify-center py-2 rounded-2xl text-[#5C6460] hover:text-[#1F2421] transition cursor-pointer"
+            className="flex flex-col items-center justify-center py-1.5 rounded-xl text-stone-400 hover:text-stone-700 transition cursor-pointer"
           >
-            <span className="text-xl leading-none">⚙️</span>
-            <span className="text-xs font-bold mt-1">Settings</span>
+            <Sliders className="w-5 h-5" />
+            <span className="text-[11px] font-medium mt-1">Settings</span>
           </button>
         </div>
       </nav>
