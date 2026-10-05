@@ -22,7 +22,8 @@ import {
   Sliders,
   Bell,
   Footprints,
-  Compass
+  Compass,
+  AlertCircle
 } from 'lucide-react';
 import { ReminderItem, UserPreferences } from '../types/notifications';
 import { WorkScheduleConfig, WorkDayShift, WorkdayHabitRecommendation } from '../types/workSchedule';
@@ -104,11 +105,20 @@ export const TodayWorkoutHub: React.FC<TodayWorkoutHubProps> = ({
 
   const DAYS_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const todayDayName = DAYS_NAMES[currentDayIdx];
+  const tomorrowDayIdx = (currentDayIdx + 1) % 7;
+  const tomorrowDayName = DAYS_NAMES[tomorrowDayIdx];
 
   // Reminders scheduled for today
   const todayReminders = reminders
     .filter((r) => r.enabled && r.daysOfWeek.includes(currentDayIdx))
     .sort((a, b) => a.time.localeCompare(b.time));
+
+  // Reminders scheduled for tomorrow
+  const tomorrowReminders = reminders
+    .filter((r) => r.enabled && r.daysOfWeek.includes(tomorrowDayIdx))
+    .sort((a, b) => a.time.localeCompare(b.time));
+
+  const tomorrowFirst = tomorrowReminders[0] || null;
 
   // Determine current clock minutes
   const nowMins = (() => {
@@ -116,42 +126,70 @@ export const TodayWorkoutHub: React.FC<TodayWorkoutHubProps> = ({
     return (h || 0) * 60 + (m || 0);
   })();
 
-  // Track late status
+  // Helper to determine if a reminder's time has passed its allowable window and is Missed
+  const isReminderMissed = (rem: ReminderItem): boolean => {
+    if (rem.completedToday || rem.skippedToday) return false;
+    if (rem.missedToday) return true;
+    const [rh, rm] = rem.time.split(':').map(Number);
+    const rMins = (rh || 0) * 60 + (rm || 0);
+    const duration = rem.durationMinutes || 30;
+    const maxGrace = Math.max(60, duration + 15);
+    return nowMins - rMins > maxGrace;
+  };
+
+  // Helper to check if a reminder is currently running slightly late (within 10-60 mins of start)
+  const isReminderRunningLate = (rem: ReminderItem): boolean => {
+    if (rem.completedToday || rem.skippedToday || rem.missedToday) return false;
+    const [rh, rm] = rem.time.split(':').map(Number);
+    const rMins = (rh || 0) * 60 + (rm || 0);
+    const duration = rem.durationMinutes || 30;
+    const maxGrace = Math.max(60, duration + 15);
+    const diff = nowMins - rMins;
+    return diff >= 10 && diff <= maxGrace;
+  };
+
+  // Track late status using updated service (only catches genuinely recent late workouts)
   const lateStatus: LateWorkoutStatus = ScheduleAdaptationService.detectLateStatus(
     reminders,
     currentDayIdx,
     nowMins
   );
 
-  // Find next upcoming uncompleted reminder
+  // Find next upcoming uncompleted reminder that has NOT been missed
   let nextUpReminder: ReminderItem | null = null;
   let nextDiffMins = Infinity;
 
+  // 1. If there is a workout genuinely running slightly late right now (within last 10-60 mins):
   if (lateStatus.hasLateWorkout && lateStatus.overdueWorkout) {
     nextUpReminder = lateStatus.overdueWorkout;
     nextDiffMins = -lateStatus.overdueMinutes;
   } else {
+    // 2. Find the earliest active reminder that is upcoming or happening now (not missed, not completed, not skipped)
     for (const rem of todayReminders) {
-      if (rem.completedToday || rem.skippedToday) continue;
+      if (rem.completedToday || rem.skippedToday || isReminderMissed(rem)) continue;
       const [rh, rm] = rem.time.split(':').map(Number);
-      const rMins = rh * 60 + rm;
-      const diff = rMins - nowMins;
+      const rMins = (rh || 0) * 60 + (rm || 0);
+      const diff = rMins - nowMins; // positive if future, negative if recent past
 
-      if (diff >= -30 && diff < nextDiffMins) {
+      if (diff >= -15 && diff < nextDiffMins) {
         nextDiffMins = diff;
         nextUpReminder = rem;
       }
     }
 
     if (!nextUpReminder) {
-      nextUpReminder = todayReminders.find((r) => !r.completedToday && !r.skippedToday) || null;
+      // Find any future reminder today
+      nextUpReminder = todayReminders.find(
+        (r) => !r.completedToday && !r.skippedToday && !isReminderMissed(r)
+      ) || null;
     }
   }
 
   // Count progress stats
   const completedCount = todayReminders.filter((r) => r.completedToday).length;
+  const skippedCount = todayReminders.filter((r) => r.skippedToday).length;
+  const missedCount = todayReminders.filter((r) => isReminderMissed(r)).length;
   const totalCount = todayReminders.length;
-  const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   // Hydration handlers
   const handleUpdateWater = (delta: number) => {
@@ -170,7 +208,7 @@ export const TodayWorkoutHub: React.FC<TodayWorkoutHubProps> = ({
   const handleQuickDelay15 = async () => {
     if (!nextUpReminder) return;
     const subsequent = todayReminders.filter(
-      (r) => r.id !== nextUpReminder?.id && !r.completedToday
+      (r) => r.id !== nextUpReminder?.id && !r.completedToday && !isReminderMissed(r)
     );
     const previews = ScheduleAdaptationService.previewShift(nextUpReminder, subsequent, 15);
     const updated = await ScheduleAdaptationService.applyShiftToReminders(reminders, previews);
@@ -236,11 +274,11 @@ export const TodayWorkoutHub: React.FC<TodayWorkoutHubProps> = ({
     }
   };
 
-  const isCurrentOverdue = lateStatus.hasLateWorkout && lateStatus.overdueWorkout?.id === nextUpReminder?.id;
+  const isCurrentOverdue = nextUpReminder && isReminderRunningLate(nextUpReminder);
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto pb-20">
-      {/* 1. EDITORIAL HEADER (Clean Typography, No Pill Clutter) */}
+      {/* 1. EDITORIAL HEADER (Clean Typography, Accurate Real-Time Status) */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4 border-b border-stone-200">
         <div>
           <div className="text-xs font-semibold tracking-wider text-stone-500 uppercase">
@@ -251,6 +289,12 @@ export const TodayWorkoutHub: React.FC<TodayWorkoutHubProps> = ({
           </h2>
           <div className="flex items-center gap-3 text-xs text-stone-500 mt-1">
             <span>{completedCount} of {totalCount} completed</span>
+            {missedCount > 0 && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-stone-500">{missedCount} missed or past</span>
+              </>
+            )}
             <span aria-hidden="true">·</span>
             <span>{waterGlasses} of 8 glasses logged</span>
           </div>
@@ -281,8 +325,8 @@ export const TodayWorkoutHub: React.FC<TodayWorkoutHubProps> = ({
             <div className="rounded-3xl border border-stone-200/90 bg-white p-6 sm:p-8 shadow-xs space-y-6">
               {/* Kicker & Time */}
               <div className="flex items-center justify-between text-xs text-stone-500">
-                <span className="font-medium tracking-wide uppercase">
-                  {isCurrentOverdue ? 'Pending Start' : 'Up Next'}
+                <span className="font-semibold tracking-wide uppercase text-stone-700">
+                  {isCurrentOverdue ? `Running Late (+${lateStatus.overdueMinutes}m)` : 'Up Next'}
                 </span>
                 <span className="font-medium text-stone-900">
                   {formatTime12h(nextUpReminder.time)} · {nextUpReminder.durationMinutes || 30} Minutes
@@ -304,7 +348,7 @@ export const TodayWorkoutHub: React.FC<TodayWorkoutHubProps> = ({
                 )}
               </div>
 
-              {/* Overdue helper if late */}
+              {/* Overdue helper if genuinely running late right now */}
               {isCurrentOverdue && (
                 <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 text-xs text-stone-600 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
@@ -381,7 +425,7 @@ export const TodayWorkoutHub: React.FC<TodayWorkoutHubProps> = ({
               </div>
             </div>
           ) : (
-            /* Completed All For Today */
+            /* Completed / Finished for Today */
             <div className="rounded-3xl border border-stone-200/90 bg-white p-8 sm:p-12 text-center space-y-4 shadow-xs">
               <div className="w-12 h-12 rounded-full bg-emerald-50 text-[#1B4332] flex items-center justify-center mx-auto">
                 <Check className="w-6 h-6 stroke-[2.5]" />
@@ -390,9 +434,25 @@ export const TodayWorkoutHub: React.FC<TodayWorkoutHubProps> = ({
                 All routines finished for today
               </h3>
               <p className="text-sm text-stone-500 max-w-md mx-auto leading-relaxed">
-                You took time for your physical health and recovery. Rest well and enjoy your evening.
+                {missedCount > 0 ? (
+                  <>
+                    Today's active window has concluded ({completedCount} completed, {missedCount} past/missed). Take time to rest and recharge tonight.
+                  </>
+                ) : (
+                  <>
+                    You completed your physical wellness routines for {todayDayName}. Rest well and recharge.
+                  </>
+                )}
               </p>
-              <div className="pt-2">
+
+              {tomorrowFirst && (
+                <div className="text-xs text-stone-600 bg-stone-50 p-3.5 rounded-2xl border border-stone-200 inline-block text-left">
+                  <div className="font-semibold text-stone-900">Tomorrow ({tomorrowDayName}):</div>
+                  <div>First routine starts at {formatTime12h(tomorrowFirst.time)} · {tomorrowFirst.title}</div>
+                </div>
+              )}
+
+              <div className="pt-2 flex items-center justify-center gap-2">
                 <button
                   onClick={onOpenScheduleManager}
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium text-stone-800 bg-stone-100 hover:bg-stone-200 transition"
@@ -411,9 +471,10 @@ export const TodayWorkoutHub: React.FC<TodayWorkoutHubProps> = ({
                 <h4 className="text-base font-semibold text-stone-900">Today's Schedule</h4>
                 <p className="text-xs text-stone-500">Tap to mark tasks completed</p>
               </div>
-              <span className="text-xs font-medium text-stone-500">
-                {completedCount} / {totalCount} Done
-              </span>
+              <div className="text-xs text-stone-500 font-medium">
+                <span>{completedCount} Done</span>
+                {missedCount > 0 && <span className="text-stone-500"> · {missedCount} Missed</span>}
+              </div>
             </div>
 
             {todayReminders.length === 0 ? (
@@ -425,13 +486,14 @@ export const TodayWorkoutHub: React.FC<TodayWorkoutHubProps> = ({
                 {todayReminders.map((rem) => {
                   const isDone = rem.completedToday;
                   const isSkipped = rem.skippedToday;
+                  const isMissed = isReminderMissed(rem);
                   const isNext = nextUpReminder?.id === rem.id;
 
                   return (
                     <div
                       key={rem.id}
                       className={`py-3.5 flex items-center justify-between gap-4 transition ${
-                        isDone ? 'opacity-50' : ''
+                        isDone ? 'opacity-50' : isMissed ? 'opacity-70' : ''
                       }`}
                     >
                       <div className="flex items-center gap-3.5 min-w-0">
@@ -444,11 +506,14 @@ export const TodayWorkoutHub: React.FC<TodayWorkoutHubProps> = ({
                           className={`w-6 h-6 rounded-full border flex items-center justify-center transition cursor-pointer flex-shrink-0 ${
                             isDone
                               ? 'bg-[#1B4332] border-[#1B4332] text-white'
+                              : isMissed
+                              ? 'border-stone-300 bg-stone-50 hover:border-stone-400'
                               : 'border-stone-300 bg-white hover:border-[#1B4332]'
                           }`}
-                          title="Toggle completed"
+                          title={isDone ? 'Completed' : isMissed ? 'Mark as completed anyway' : 'Mark completed'}
                         >
                           {isDone && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                          {isMissed && !isDone && <span className="w-1.5 h-1.5 rounded-full bg-stone-400" />}
                         </button>
 
                         <div className="min-w-0">
@@ -456,16 +521,28 @@ export const TodayWorkoutHub: React.FC<TodayWorkoutHubProps> = ({
                             <span className="text-xs font-mono font-medium text-stone-500">
                               {formatTime12h(rem.time)}
                             </span>
-                            {isNext && !isDone && (
-                              <span className="text-[11px] font-medium text-[#1B4332]">Current Focus</span>
+
+                            {/* Accurate status labels */}
+                            {isDone && (
+                              <span className="text-[11px] font-medium text-[#1B4332]">Completed</span>
                             )}
                             {isSkipped && (
                               <span className="text-[11px] text-stone-400">Skipped</span>
                             )}
+                            {isMissed && !isDone && !isSkipped && (
+                              <span className="text-[11px] font-medium text-stone-500 bg-stone-100 px-2 py-0.5 rounded-md">
+                                Missed
+                              </span>
+                            )}
+                            {isNext && !isDone && !isMissed && (
+                              <span className="text-[11px] font-medium text-[#1B4332]">
+                                {isCurrentOverdue ? `Running Late (+${lateStatus.overdueMinutes}m)` : 'Current Focus'}
+                              </span>
+                            )}
                           </div>
                           <div
-                            className={`text-sm font-medium text-stone-900 truncate ${
-                              isDone ? 'line-through text-stone-400' : ''
+                            className={`text-sm font-medium text-stone-900 truncate mt-0.5 ${
+                              isDone ? 'line-through text-stone-400' : isMissed ? 'text-stone-600' : ''
                             }`}
                           >
                             {rem.title}
@@ -474,19 +551,40 @@ export const TodayWorkoutHub: React.FC<TodayWorkoutHubProps> = ({
                       </div>
 
                       <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <button
-                          onClick={() => onStartWorkout(rem)}
-                          className="px-3 py-1.5 rounded-lg text-xs font-medium text-stone-700 bg-stone-50 hover:bg-stone-100 transition cursor-pointer"
-                        >
-                          Start
-                        </button>
-                        <button
-                          onClick={() => onTriggerAlarm(rem)}
-                          className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 transition cursor-pointer"
-                          title="Preview chime"
-                        >
-                          <Volume2 className="w-3.5 h-3.5" />
-                        </button>
+                        {isMissed && !isDone && !isSkipped ? (
+                          <>
+                            <button
+                              onClick={() => onStartWorkout(rem)}
+                              className="px-2.5 py-1 rounded-lg text-xs font-medium text-stone-600 border border-stone-200 hover:bg-stone-50 transition cursor-pointer"
+                              title="Start this routine now"
+                            >
+                              Do Now
+                            </button>
+                            <button
+                              onClick={() => onSkipToday(rem)}
+                              className="px-2 py-1 rounded-lg text-xs text-stone-400 hover:text-stone-700 transition cursor-pointer"
+                              title="Dismiss for today"
+                            >
+                              Skip
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => onStartWorkout(rem)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-medium text-stone-700 bg-stone-50 hover:bg-stone-100 transition cursor-pointer"
+                            >
+                              Start
+                            </button>
+                            <button
+                              onClick={() => onTriggerAlarm(rem)}
+                              className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 transition cursor-pointer"
+                              title="Preview chime"
+                            >
+                              <Volume2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   );

@@ -10,6 +10,7 @@ export interface LateWorkoutStatus {
   subsequentReminders: ReminderItem[];
   currentClockMinutes: number;
   scheduledMinutes: number;
+  missedReminders: ReminderItem[];
 }
 
 export interface ShiftPlanPreview {
@@ -58,20 +59,27 @@ export class ScheduleAdaptationService {
       .filter((r) => r.enabled && r.daysOfWeek.includes(dayOfWeek))
       .sort((a, b) => this.timeToMinutes(a.time) - this.timeToMinutes(b.time));
 
+    const missedReminders: ReminderItem[] = [];
     let overdueWorkout: ReminderItem | null = null;
-    let maxOverdueMins = 0;
+    let minRecentOverdueDiff = Infinity;
 
     for (const rem of todayReminders) {
       if (rem.completedToday || rem.skippedToday) continue;
 
       const remMins = this.timeToMinutes(rem.time);
+      const duration = rem.durationMinutes || 30;
       const diff = nowMins - remMins;
+      const maxGraceLimit = Math.max(60, duration + 15);
 
-      // If scheduled time was more than 10 minutes ago, user hasn't started or is late
-      if (diff >= 10) {
-        if (!overdueWorkout || diff > maxOverdueMins) {
+      // If scheduled time was more than the grace limit ago (e.g. 7 AM morning workout when it's now night),
+      // it is MISSED or SKIPPED, NOT pending/late!
+      if (diff > maxGraceLimit || rem.missedToday) {
+        missedReminders.push(rem);
+      } else if (diff >= 10 && diff <= maxGraceLimit) {
+        // Between 10 and 60 minutes late: This is genuinely a workout running slightly late right now!
+        if (diff < minRecentOverdueDiff) {
           overdueWorkout = rem;
-          maxOverdueMins = diff;
+          minRecentOverdueDiff = diff;
         }
       }
     }
@@ -85,6 +93,7 @@ export class ScheduleAdaptationService {
         subsequentReminders: [],
         currentClockMinutes: nowMins,
         scheduledMinutes: 0,
+        missedReminders,
       };
     }
 
@@ -96,17 +105,19 @@ export class ScheduleAdaptationService {
         r.id !== overdueWorkout!.id &&
         !r.completedToday &&
         !r.skippedToday &&
+        !missedReminders.some((m) => m.id === r.id) &&
         this.timeToMinutes(r.time) >= overdueScheduledMins
     );
 
     return {
       hasLateWorkout: true,
       overdueWorkout,
-      overdueMinutes: maxOverdueMins,
-      isSignificantlyLate: maxOverdueMins >= 15,
+      overdueMinutes: minRecentOverdueDiff,
+      isSignificantlyLate: minRecentOverdueDiff >= 15,
       subsequentReminders,
       currentClockMinutes: nowMins,
       scheduledMinutes: overdueScheduledMins,
+      missedReminders,
     };
   }
 

@@ -47,6 +47,7 @@ export interface ReminderItem {
   isAlarm: boolean; // Triggers full Workout Alarm interface
   completedToday?: boolean;
   skippedToday?: boolean;
+  missedToday?: boolean;
   snoozedUntil?: string | null; // ISO Date String
   lastTriggered?: string | null;
   targetMetric?: string; // e.g. "30 min | 4,000 steps"
